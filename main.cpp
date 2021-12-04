@@ -24,7 +24,7 @@ void mouse(int glut_button, int state, int x, int y);
 void motion(int x, int y);
 bool initGL(int *argc, char **argv);
 
-float imgui_co_size{1.0f};
+float imgui_co_size{100.0f};
 bool imgui_draw_co{true};
 
 std::vector<Eigen::Vector3d> dataset;
@@ -53,7 +53,8 @@ void draw_confusion_ellipse(const Eigen::Matrix3d& covar, Eigen::Vector3d& mean,
 
     Eigen::LLT<Eigen::Matrix<double,3,3> > cholSolver(covar);
     Eigen::Matrix3d transform = cholSolver.matrixL();
-
+    std::cout << "transform " << std::endl;
+    std::cout << transform << std::endl;
     const double pi = 3.141592;
     const double di =0.02;
     const double dj =0.04;
@@ -84,10 +85,42 @@ void draw_confusion_ellipse(const Eigen::Matrix3d& covar, Eigen::Vector3d& mean,
             glEnd();
         }
 }
+
+void draw_confusion_ellipse2D(const Eigen::Matrix3d& covar, Eigen::Vector3d& mean, Eigen::Vector3f color, float nstd  = 3)
+{
+
+    Eigen::LLT<Eigen::Matrix<double,3,3> > cholSolver(covar);
+    Eigen::Matrix3d transform = cholSolver.matrixL();
+    std::cout << "transform " << std::endl;
+    std::cout << transform << std::endl;
+    const double pi = 3.141592;
+    const double di =0.02;
+    const double dj =0.04;
+    const double du =di*2*pi;
+    const double dv =dj*pi;
+    glColor3f(color.x(), color.y(),color.z());
+
+    for (double i = 0; i < 1.0; i+=di) { //horizonal
+
+            double u = i*2*pi;      //0     to  2pi
+
+            const Eigen::Vector3d pp0( cos(u), sin (u),0);
+            const Eigen::Vector3d pp1( cos(u+du), sin(u+du),0);
+
+            Eigen::Vector3d tp0 = transform * (nstd*pp0) + mean;
+            Eigen::Vector3d tp1 = transform * (nstd*pp1) + mean;
+
+
+            glBegin(GL_LINE_LOOP);
+            glVertex3dv(tp0.data());
+            glVertex3dv(tp1.data());
+            glEnd();
+        }
+}
 Eigen::Vector3d mean  ;
 Eigen::Matrix3d covar ;
 Eigen::Matrix3f covar_f ;
-
+int num_points(100);
 int main (int argc, char *argv[])
 {
     covar = Eigen::Matrix3d::Identity();
@@ -97,7 +130,7 @@ int main (int argc, char *argv[])
            .4, .2, 3;
     covar_f = covar.cast<float>();
     Eigen::EigenMultivariateNormal<double> normX_solver(mean,covar);
-    for (int i =-0; i < 10000; i ++)
+    for (int i =-0; i < num_points; i ++)
     {
         dataset.emplace_back(normX_solver.samples(1));
     }
@@ -118,8 +151,13 @@ void display() {
 
 
     Eigen::Matrix3d covariance_measured = findCovariance(dataset, mean);
+    glLineWidth(1);
     draw_confusion_ellipse(covariance_measured,mean, {0,1,1});
     draw_confusion_ellipse(covar,mean, {1,0,0});
+
+    glLineWidth(5);
+    draw_confusion_ellipse2D(covariance_measured,mean, {0,1,1});
+    draw_confusion_ellipse2D(covar,mean, {1,0,0});
 
     if (imgui_draw_co) {
         glBegin(GL_LINES);
@@ -155,12 +193,13 @@ void display() {
     ImGui::InputFloat3("c1",covar_f.data()+3);
     ImGui::InputFloat3("c2",covar_f.data()+6);
 
+    ImGui::InputInt("num_points",&num_points);
     if(ImGui::Button("randomize"))
     {
         covar = covar_f.cast<double>();
         dataset.clear();
         Eigen::EigenMultivariateNormal<double> normX_solver(mean,covar, false, time(0));
-        for (int i =-0; i < 10000; i ++)
+        for (int i =-0; i < num_points; i ++)
         {
             dataset.emplace_back(normX_solver.samples(1));
         }
