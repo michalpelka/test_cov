@@ -3,6 +3,7 @@
 #include "imgui.h"
 #include "imgui_impl_glut.h"
 #include "imgui_impl_opengl2.h"
+
 #include <Eigen/Dense>
 #include "3rd/eigenmvn.h"
 #include <random>
@@ -26,6 +27,8 @@ bool initGL(int *argc, char **argv);
 std::vector<Eigen::Vector2d> ladnmarks_gt;
 std::vector<Eigen::Vector2d> trajectory_gt;
 std::vector<Eigen::Vector2d> trajectory_estimate;
+std::vector<Eigen::Vector2d> trajectory_free;
+
 
 void draw_confusion_ellipse2D(const Eigen::Matrix2d& covar, Eigen::Vector2d& mean, Eigen::Vector3f color, float nstd  = 3)
 {
@@ -61,15 +64,17 @@ Eigen::Matrix3f covar_f ;
 
 float imgui_Q_noise =1;
 float imgui_R_noise =10;
-float imgui_Odometery_err =0.01;
+float imgui_Odometery_err =0.001;
 
-Eigen::Vector3d robot_pose{-5,0,0};
+Eigen::Vector3d robot_pose{-35,-35,0};
 double v = 0;
 double omega = 0;
 
 constexpr int STATE_SIZE=3;
-Eigen::VectorXd mu = Eigen::Vector3d{0,0,0};
+Eigen::VectorXd mu = robot_pose;
 Eigen::MatrixXd cov = Eigen::Matrix3d::Identity()*1e3;
+
+Eigen::VectorXd mu_free =mu;
 
 int main (int argc, char *argv[])
 {
@@ -80,9 +85,9 @@ int main (int argc, char *argv[])
     cov.resize(STATE_SIZE,STATE_SIZE);
 
     // initialize map
-    for (int i =-10; i < 10;i++)
+    for (int i =-5; i < 5;i++)
     {
-        for (int j =-10; j < 10;j++)
+        for (int j =-5; j < 5;j++)
         {
             ladnmarks_gt.push_back(Eigen::Vector2d(i*5,j*5));
         }
@@ -169,7 +174,7 @@ void display() {
     window_height = glutGet(GLUT_WINDOW_HEIGHT);
     window_width = glutGet(GLUT_WINDOW_WIDTH);
     // default initialization
-    glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClearColor(1.0, 1.0, 1.0, 1.0);
     glEnable(GL_DEPTH_TEST);
 
     // viewport
@@ -223,11 +228,11 @@ void display() {
 
 
     if (v!=0 || omega!=0) {
-        const float v_observed = v+0.1;
+        const float v_observed = v;
         const float omega_observed = omega+imgui_Odometery_err;
         const auto mu_pred = predict_mu(mu, Eigen::Vector2d{v_observed, omega_observed});
         const auto cov_pred = predict_cov(mu, cov, Eigen::Vector2d{v_observed, omega_observed});
-
+        mu_free = predict_mu(mu_free,Eigen::Vector2d{v_observed, omega_observed});
         if (ranges_detections.size() > 0) {
             for (int i = 0; i < ranges_detections.size(); i++) {
 
@@ -257,7 +262,7 @@ void display() {
                 std::cout << "Kalman_gain : \n" << H << std::endl;
                 mu = mu_pred + Kalman_gain * z_minus_zpred;
                 cov = (Ixd - Kalman_gain * H) * cov_pred;
-
+                
             }
         } else {
             mu = mu_pred;
@@ -265,6 +270,7 @@ void display() {
         }
         trajectory_gt.push_back(robot_pose.head<2>());
         trajectory_estimate.push_back(mu.head<2>());
+        trajectory_free.push_back(mu_free.head<2>());
 
     }
 
@@ -288,24 +294,34 @@ void display() {
         v1  = rot_mat * v1;
 
         glBegin(GL_LINES);
-        glColor3f(1.0f, 1.0f, 0.0f);
+        glColor3f(0.0f, 0.0f, 0.0f);
         glVertex3f(v0.x(),v0.y(),v0.z());
         glVertex3f(v1.x(),v1.y(),v1.z());
         glEnd();
     }
     glBegin(GL_LINE_STRIP);
-    glColor3f(1.0f, 1.0f, 1.0f);
+    glColor3f(0.5f, 0.5f, 0.5f);
     for (const auto & p : trajectory_gt) {
         glVertex3f(p.x(),p.y(),0);
     }
     glEnd();
 
     glBegin(GL_LINE_STRIP);
-    glColor3f(0.5f, 0.5f, 0.5f);
+    glLineWidth(5);
+    glColor3f(0.0f, 1.0f, 0.0f);
     for (const auto & p : trajectory_estimate) {
+        glVertex3f(p.x()+0.01,p.y()+0.01,0);
+    }
+    glEnd();
+
+    glBegin(GL_LINE_STRIP);
+    glLineWidth(5);
+    glColor3f(1.0f, 0, 0);
+    for (const auto & p : trajectory_free) {
         glVertex3f(p.x(),p.y(),0);
     }
     glEnd();
+
 
     // draw robot
     glPointSize(2);
@@ -333,9 +349,9 @@ void display() {
     }
 
     // draw lanmark gt
-    glPointSize(6);
+    glPointSize(12);
     glBegin(GL_POINTS);
-    glColor3f(0.0f, 1.0f, 1.0f);
+    glColor3f(0.0f, 0.0f, 1.0f);
     for (auto & t : ladnmarks_gt){
         glVertex3d(t.x(),t.y(),0);
     }

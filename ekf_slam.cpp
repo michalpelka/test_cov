@@ -3,6 +3,7 @@
 #include <GL/freeglut.h>
 
 #include "imgui.h"
+#include "implot.h"
 #include "imgui_impl_glut.h"
 #include "imgui_impl_opengl2.h"
 #include <Eigen/Dense>
@@ -29,19 +30,6 @@ float imgui_co_size{100.0f};
 bool imgui_draw_co{true};
 
 std::vector<Eigen::Vector3d> ladnmarks_gt{
-
-
-        {-12,-1,0},
-        {-8,-1,0},
-        {-4,-1,0},
-        {4,-1,0},
-        {8,-1,0},
-        {12,-1,0},
-//        {26,-8,0},
-//
-//        {4,8,0},
-//        {12,8,0},
-//        {26,8,0},
 
 
 };
@@ -171,28 +159,34 @@ double v = 0;
 double omega = 0;
 
 Eigen::VectorXd mu = Eigen::Vector3d{0,0,0};
-Eigen::MatrixXd cov = Eigen::Matrix3d::Identity()*0.01;
+Eigen::MatrixXd cov = Eigen::Matrix3d::Identity()*1e-9;
 
 int main (int argc, char *argv[])
 {
     std::default_random_engine generator;
     std::uniform_real_distribution<double> distribution(0.01,0.01);
 
+    for (int i =-1; i < 1;i++)
+    {
+        //ladnmarks_gt.push_back(Eigen::Vector3d(i*2, 3.5,0));
+        ladnmarks_gt.push_back(Eigen::Vector3d(i*5,-3.5,0));
+    }
+
 
 
     mu.resize(3+2*ladnmarks_gt.size());
     cov.resize(3+2*ladnmarks_gt.size(),3+2*ladnmarks_gt.size());
-    cov(0,0) = 1000;
-    cov(1,1) = 1000;
-    cov(2,2) = 1000;
+    cov(0,0) = 0.1;
+    cov(1,1) = 0.1;
+    cov(2,2) = 0.1;
 
     for (int i =0; i < ladnmarks_gt.size();i++)
     {
         mu[3+i*2] = ladnmarks_gt[i].x()+distribution(generator);
         mu[3+i*2+1] = ladnmarks_gt[i].y()+distribution(generator);
 
-        cov(3+i*2,3+i*2) = 0.001;
-        cov(3+i*2+1,3+i*2+1) = 0.001;
+        cov(3+i*2,3+i*2) = 10;
+        cov(3+i*2+1,3+i*2+1) = 10;
     }
 
 
@@ -255,10 +249,10 @@ Eigen::MatrixXd predict_cov (Eigen::VectorXd x, Eigen::MatrixXd cov, Eigen::Vect
 
 
     Eigen::Matrix<double,3,3> Q;
-    Q <<    0.1,   0  ,0,
-            0  , 0.1 ,  0,
-            0  ,0  , 0.1;
-    cov.topLeftCorner(3,3) = jF * cov.topLeftCorner(3,3) * jF.transpose() + Q ;
+    Q <<    0.5,   0  ,0,
+            0  , 0.5 ,  0,
+            0  ,0  , 0.5;
+    cov.topLeftCorner(3,3) = jF * cov.topLeftCorner(3,3) * jF.transpose() +Q ;
     return cov;
 }
 
@@ -292,7 +286,7 @@ std::vector<Eigen::Vector3d> rangeModel(const Eigen::Vector3d& pose,const std::v
 //            0,0,1,0,
 //            0,0,0,1;
 //    Eigen::Matrix4d rot_mat_i = rot_mat.inverse();
-    //std::vector<Eigen::Vector3d> r;
+    std::vector<Eigen::Vector3d> r;
     const double robot_phi = pose[2];
 
     Eigen::Vector3d smallest (std::numeric_limits<double>::max(),0,0);
@@ -302,18 +296,20 @@ std::vector<Eigen::Vector3d> rangeModel(const Eigen::Vector3d& pose,const std::v
         const double dist = delta.norm();
 
         double bearing = std::atan2(delta.y(),delta.x()) - robot_phi;
-        //if (abs(bearing) < 0.1) {
-            if (dist < smallest.x()) {
-                smallest = Eigen::Vector3d(dist, bearing, i);
+        bearing = remainder(bearing, 2.0f*M_PI);
+        constexpr float angle = 45.f * M_PI/180.f;
+        //if (abs(bearing) < angle) {
+            if (dist < max_range && dist > 0.5) {
+                r.push_back(Eigen::Vector3d(dist, bearing, i));
             }
         //}
     }
-
-    if (smallest.x() < max_range)
-    {
-        return {smallest};
+    if (r.size()>0) {
+        std::sort(r.begin(), r.end(),
+                  [](const Eigen::Vector3d &l1, const Eigen::Vector3d &l2) { return l1.x() < l2.x(); });
+        return {r[0]};
     }
-    return {};
+    return r;
 }
 
 void display() {
@@ -407,13 +403,13 @@ void display() {
                 std::cout << "H : \n" << H << std::endl;
                 std::cout << "H * cov_pred * H.t : \n" << H * cov_pred * H.transpose() << std::endl;
 
-                const Eigen::Matrix2d R = 1e-30 * Eigen::Matrix2d::Identity();
+                const Eigen::Matrix2d R = 1e-2 * Eigen::Matrix2d::Identity();
 
                 Eigen::MatrixXd Kalman_gain = cov_pred * H.transpose() * (H * cov_pred * H.transpose() + R).inverse();
                 std::cout << "Kalman_gain : \n" << H << std::endl;
                 mu = mu_pred + Kalman_gain * z_minus_zpred;
                 cov = (Ixd - Kalman_gain * H) * cov_pred;
-
+                std::cout << "cov : \n" << cov << std::endl;
                 //        mu = mu_pred;
                 //        cov = cov_pred;
             }
@@ -468,12 +464,15 @@ void display() {
         std::stringstream ss;
         ss << "X:\n" <<  mu.transpose().format(CleanFmt);
         ss << "\n";
-        ss << "cov:\n" << cov.format(CleanFmt);
+        //ss << "cov:\n" << cov.format(CleanFmt);
         ImGui::Text(ss.str().c_str());
     }
 
 
-
+    Eigen::MatrixXf ff = cov.cast<float>();
+    ImPlot::BeginPlot("My Plot");
+    ImPlot::PlotHeatmap("heat",ff.data(),ff.cols(),ff.rows(),ff.minCoeff(),ff.maxCoeff());
+    ImPlot::EndPlot();
     for (int i =0; i < ladnmarks_gt.size(); i++){
         Eigen::Vector2d lnd_mean {mu[3+2*i],mu[3+2*i+1]};
         Eigen::Matrix2d lnd_cov = cov.block<2,2>(3+2*i,3+2*i);
@@ -584,6 +583,7 @@ bool initGL(int *argc, char **argv) {
                    10000.0);
     glutReshapeFunc(reshape);
     ImGui::CreateContext();
+    ImPlot::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 

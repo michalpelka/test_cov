@@ -19,9 +19,10 @@ find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 
 
 
-include_directories(3rd/imgui 3rd/imgui/backends)
+include_directories(3rd/imgui 3rd/imgui/backends 3rd/implot)
 set(ImGui_Glut_src 3rd/imgui/imgui.cpp 3rd/imgui/imgui_demo.cpp 3rd/imgui/imgui_draw.cpp 3rd/imgui/imgui_widgets.cpp
-        3rd/imgui/backends/imgui_impl_glut.cpp 3rd/imgui/backends/imgui_impl_opengl2.cpp)
+        3rd/imgui/backends/imgui_impl_glut.cpp 3rd/imgui/backends/imgui_impl_opengl2.cpp
+        3rd/implot/implot.cpp 3rd/implot/implot_items.cpp)
 
 
 
