@@ -48,10 +48,15 @@ Eigen::Matrix3d findCovariance ( std::vector<Eigen::Vector3d> points ,const Eige
     return covariance;
 }
 
-void draw_confusion_ellipse(const Eigen::Matrix3d& covar, Eigen::Vector3d& mean, Eigen::Vector3f color, float nstd  = 3)
-{
+Eigen::Affine3f  pose1 {Eigen::Matrix4f::Identity()};
+Eigen::Affine3f  pose2 {Eigen::Matrix4f::Identity()};
 
-    Eigen::LLT<Eigen::Matrix<double,3,3> > cholSolver(covar);
+float t=0;
+
+void draw_confusion_ellipse(const Eigen::Matrix3f& covar, const Eigen::Vector3f& mean_, Eigen::Vector3f color, float nstd  = 3)
+{
+    Eigen::LLT<Eigen::Matrix<double,3,3> > cholSolver(covar.cast<double>());
+    auto mean = mean_.cast<double>();
     Eigen::Matrix3d transform = cholSolver.matrixL();
 
     std::cout << transform << std::endl;
@@ -106,38 +111,59 @@ void draw_confusion_ellipse2D(const Eigen::Matrix3d& covar, Eigen::Vector3d& mea
 
     for (double i = 0; i < 1.0; i+=di) { //horizonal
 
-            double u = i*2*pi;      //0     to  2pi
+        double u = i*2*pi;      //0     to  2pi
 
-            const Eigen::Vector3d pp0( cos(u), sin (u),0);
-            const Eigen::Vector3d pp1( cos(u+du), sin(u+du),0);
+        const Eigen::Vector3d pp0( cos(u), sin (u),0);
+        const Eigen::Vector3d pp1( cos(u+du), sin(u+du),0);
 
-            Eigen::Vector3d tp0 = transform * (nstd*pp0) + mean;
-            Eigen::Vector3d tp1 = transform * (nstd*pp1) + mean;
+        Eigen::Vector3d tp0 = transform * (nstd*pp0) + mean;
+        Eigen::Vector3d tp1 = transform * (nstd*pp1) + mean;
 
 
-            glBegin(GL_LINE_LOOP);
-            glVertex3dv(tp0.data());
-            glVertex3dv(tp1.data());
-            glEnd();
-        }
+        glBegin(GL_LINE_LOOP);
+        glVertex3dv(tp0.data());
+        glVertex3dv(tp1.data());
+        glEnd();
+    }
 }
-Eigen::Vector3d mean  ;
-Eigen::Matrix3d covar ;
-Eigen::Matrix3f covar_f ;
-int num_points(100);
+
+void draw_co(const Eigen::Matrix4f &f, float s =1 ){
+    glBegin(GL_LINES);
+    Eigen::Vector4f v0  = f * Eigen::Vector4f{0,0,0,1};
+    Eigen::Vector4f v1  = f * Eigen::Vector4f{s,0,0,1};
+    Eigen::Vector4f v2  = f * Eigen::Vector4f{0,s,0,1};
+    Eigen::Vector4f v3  = f * Eigen::Vector4f{0,0,s,1};
+
+    glColor3f(1.0f, 0.0f, 0.0f);
+    glVertex3fv(v0.data());
+    glVertex3fv(v1.data());
+
+    glColor3f(0.0f, 1.0f, 0.0f);
+    glVertex3fv(v0.data());
+    glVertex3fv(v2.data());
+
+    glColor3f(0.0f, 0.0f, 1.0f);
+    glVertex3fv(v0.data());
+    glVertex3fv(v1.data());
+    glEnd();
+}
+
+
+
+
+Eigen::Matrix3f covar1 = 1.0f* Eigen::Matrix3f::Identity();
+Eigen::Matrix3f covar2 = 1.0f* Eigen::Matrix3f::Identity();;
+
+
 int main (int argc, char *argv[])
 {
-    covar = Eigen::Matrix3d::Identity();
-    mean = Eigen::Vector3d{0.01,0.001,0.01};
-    covar <<2,.2, .4,
-           .2, 1, .2,
-           .4, .2, 3;
-    covar_f = covar.cast<float>();
-    Eigen::EigenMultivariateNormal<double> normX_solver(mean,covar);
-    for (int i =-0; i < num_points; i ++)
-    {
-        dataset.emplace_back(normX_solver.samples(1));
-    }
+
+    covar1(0,0) = 2;
+    covar2(0,0) = 2;
+    pose2 = Eigen::AngleAxisf(30.0*M_PI/180.0, Eigen::Vector3f::UnitZ());
+    pose2.translation().x() = 10;
+    pose2.translation().y() = 10;
+
     initGL(&argc, argv);
     glutDisplayFunc(display);
     glutMouseFunc(mouse);
@@ -145,39 +171,59 @@ int main (int argc, char *argv[])
     glutMainLoop();
 }
 
+Eigen::Matrix4f interpolate(const Eigen::Affine3f &m1,const Eigen::Affine3f&m2, float t){
+    const Eigen::Quaternionf q1(m1.rotation());
+    const Eigen::Quaternionf q2(m2.rotation());
+
+    const Eigen::Vector3f p1 = m1.translation().head<3>();
+    const Eigen::Vector3f p2 = m2.translation().head<3>();
+
+    const Eigen::Quaternionf qt = q1.slerp(t,q2);
+    const Eigen::Vector3f pt = p1 + t*(p2-p1);
+    Eigen::Matrix4f mt{Eigen::Matrix4f::Identity()};
+    mt.matrix().block<3,3>(0,0) = qt.toRotationMatrix();
+    mt.matrix().block<3,1>(0,3) = pt.transpose();
+    return mt;
+}
+
 void display() {
+    float window_height = glutGet(GLUT_WINDOW_HEIGHT);
+    float window_width = glutGet(GLUT_WINDOW_WIDTH);
+    glViewport(0, 0, window_width, window_height);
+
+
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
+
     glTranslatef(translate_x, translate_y, translate_z);
     glRotatef(rotate_x, 1.0, 0.0, 0.0);
     glRotatef(rotate_y, 0.0, 0.0, 1.0);
 
 
-    Eigen::Matrix3d covariance_measured = findCovariance(dataset, mean);
-    glLineWidth(1);
-    draw_confusion_ellipse(covariance_measured,mean, {0,1,1});
-    draw_confusion_ellipse(covar,mean, {1,0,0});
 
-    glLineWidth(5);
-    draw_confusion_ellipse2D(covariance_measured,mean, {0,1,1});
-    draw_confusion_ellipse2D(covar,mean, {1,0,0});
+    Eigen::Vector3f t1 = pose1.translation().head<3>();
+    Eigen::Vector3f t2 = pose2.translation().head<3>();
 
-    if (imgui_draw_co) {
-        glBegin(GL_LINES);
-        glColor3f(1.0f, 0.0f, 0.0f);
-        glVertex3f(0.0f, 0.0f, 0.0f);
-        glVertex3f(imgui_co_size, 0.0f, 0.0f);
+    const Eigen::Matrix3f covar1_glob = pose1.rotation() * covar1 * pose1.rotation().transpose();
+    const Eigen::Matrix3f covar2_glob = pose2.rotation() * covar2 * pose2.rotation().transpose();
 
-        glColor3f(0.0f, 1.0f, 0.0f);
-        glVertex3f(0.0f, 0.0f, 0.0f);
-        glVertex3f(0.0f, imgui_co_size, 0.0f);
 
-        glColor3f(0.0f, 0.0f, 1.0f);
-        glVertex3f(0.0f, 0.0f, 0.0f);
-        glVertex3f(0.0f, 0.0f, imgui_co_size);
-        glEnd();
-    }
+    draw_confusion_ellipse(covar1_glob,t1,Eigen::Vector3f(1,0,0));
+    draw_co(pose1.matrix(),10);
+
+    draw_confusion_ellipse(covar2_glob,t2,Eigen::Vector3f(0,1,0));
+    draw_co(pose2.matrix(),10);
+
+    const Eigen::Matrix4f pose_t = interpolate(pose1,pose2,t);
+    Eigen::Matrix3f covar_inter = covar1 + t*(covar2-covar1);
+
+    draw_confusion_ellipse(pose_t.topLeftCorner<3,3>() * covar_inter*pose_t.topLeftCorner<3,3>().transpose(),
+                           pose_t.block<3,1>(0,3),Eigen::Vector3f(1,1,0));
+    draw_co(pose_t.matrix(),10);
+
+
     glPointSize(2);
     glBegin(GL_POINTS);
 
@@ -191,24 +237,17 @@ void display() {
     ImGui_ImplOpenGL2_NewFrame();
     ImGui_ImplGLUT_NewFrame();
     ImGui::Begin("Demo Window1");
-    ImGui::Text("Covariance");
+    ImGui::Text("Covariance1");
+    ImGui::InputFloat3("S0r0",covar1.data());
+    ImGui::InputFloat3("S0r1",covar1.data()+3);
+    ImGui::InputFloat3("S0r2",covar1.data()+6);
+    ImGui::Text("Covariance2");
+    ImGui::InputFloat3("S1r0",covar2.data());
+    ImGui::InputFloat3("S1r1",covar2.data()+3);
+    ImGui::InputFloat3("S1r2",covar2.data()+6);
 
-    ImGui::InputFloat3("c0",covar_f.data());
-    ImGui::InputFloat3("c1",covar_f.data()+3);
-    ImGui::InputFloat3("c2",covar_f.data()+6);
-
-    ImGui::InputInt("num_points",&num_points);
-    if(ImGui::Button("randomize"))
-    {
-        covar = covar_f.cast<double>();
-        dataset.clear();
-        Eigen::EigenMultivariateNormal<double> normX_solver(mean,covar, false, time(0));
-        for (int i =-0; i < num_points; i ++)
-        {
-            dataset.emplace_back(normX_solver.samples(1));
-        }
-    }
-
+    ImGui::Text("Time");
+    ImGui::SliderFloat("time",&t,0,1);
     ImGui::End();
 
     ImGui::Render();

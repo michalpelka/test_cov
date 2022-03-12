@@ -34,3 +34,6 @@ target_link_libraries(ekf_slam ${OPENGL_LIBRARIES} ${GLUT_glut_LIBRARY} Eigen3::
 
 add_executable(ekf_localization ekf_localization.cpp ${ImGui_Glut_src} )
 target_link_libraries(ekf_localization ${OPENGL_LIBRARIES} ${GLUT_glut_LIBRARY} Eigen3::Eigen)
+
+add_executable(imgui_interpolation_demo interpolation.cpp ${ImGui_Glut_src} )
+target_link_libraries(imgui_interpolation_demo ${OPENGL_LIBRARIES} ${GLUT_glut_LIBRARY} Eigen3::Eigen)
